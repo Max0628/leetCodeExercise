@@ -65,5 +65,41 @@ public class BinarySearchBasic {
     // At this point, left points to the first element >= target
     return left;
   }
+
+  /**
+   * Instructions:
+   * <p>
+   * 1. Find out the first element's value which is >= target.
+   *
+   * @param numbers
+   * @param target
+   *
+   * @return
+   */
+  public int FindFirstGreaterOrEqualValue(int numbers[], int target) {
+    int left = 0;
+
+    // right close interval
+    int right = numbers.length;
+
+    // Edge case: target is bigger than the last element.
+    if(target > numbers[numbers.length-1]){
+      return -1;
+    }
+
+    // because right index is not in the interval.
+    while (left < right) {
+      int middle = left + (right - left) / 2;
+      // in this condition, right maybe the answer.
+      if (numbers[middle] >= target) {
+        right = middle;
+      } else {
+        //in this case, left is smaller than middle, which means it will not be the answer.
+        left = middle + 1;
+      }
+    }
+    // answer will always be in the right pointer.
+    return numbers[right];
+  }
 }
 
