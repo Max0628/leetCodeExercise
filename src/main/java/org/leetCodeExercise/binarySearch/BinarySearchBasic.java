@@ -68,7 +68,6 @@ public class BinarySearchBasic {
 
   /**
    * Instructions:
-   * <p>
    * 1. Find out the first element's value which is >= target.
    *
    * @param numbers
@@ -83,7 +82,7 @@ public class BinarySearchBasic {
     int right = numbers.length;
 
     // Edge case: target is bigger than the last element.
-    if(target > numbers[numbers.length-1]){
+    if (target > numbers[numbers.length - 1]) {
       return -1;
     }
 
@@ -102,13 +101,74 @@ public class BinarySearchBasic {
     return numbers[right];
   }
 
-  public int calculateMonthlyPayment(){
-    double debt = 20000000;
+  /**
+   * Instruction :
+   * <p>
+   * A certain country's bank calculates loan repayment as follows:
+   * 1. Each month, the remaining loan balance is multiplied by (1 + monthly interest rate),
+   * then the result is truncated to the nearest integer (discard any fractional part).
+   * 2. After that, the monthly payment is subtracted from the remaining balance.
+   * <p>
+   * Example:
+   * - Suppose the remaining balance is 10,000,000 and the monthly interest rate is 0.1%.
+   * - If the customer pays 50,000 that month, the calculation is:
+   * 10,000,000 × 1.001 = 10,010,000
+   * 10,010,000 − 50,000 = 9,960,000
+   * <p>
+   * Task:
+   * - A customer borrows 20,000,000 with a monthly interest rate of 0.15%.
+   * - The loan must be fully repaid in 30 years (360 months).
+   * - Calculate the minimum monthly payment required to pay off the loan completely.
+   * - The last month may require a smaller payment.
+   * <p>
+   * Suggestion:
+   * - It is recommended to simulate the repayment schedule with a program.
+   *
+   * <p>
+   * Answer: 73940 / 70940 / 72940 / 71940
+   * </p>
+   * <p>
+   * "A stupid solution first comes to my mind."
+   */
+  public long calculateMonthlyPayment() {
+    long totalDebt = 20000000;
+    long monthlyPayment = 50000;
+    long currentLeft = 0;
+
+    // We don't know how many times need to adjust the monthlyPayment. add until it can pay the debt. Using while foop for
+    while (true) {
+      currentLeft = totalDebt;
+
+      // 360 month.
+      for (int month = 0; month <= 360; month++) {
+        currentLeft = applyMonthlyPayment(currentLeft, monthlyPayment);
+      }
+
+
+      if (currentLeft > 0) {
+
+        // If still can't pay debt. plus 1 dollar per month.
+        monthlyPayment += 1;
+      } else {
+        // 71789
+        return monthlyPayment;
+      }
+
+    }
+  }
+
+  /**
+   * Count every loop.
+   *
+   * @param previousMonthLeft
+   * @param monthlyPayment
+   *
+   * @return
+   */
+  public long applyMonthlyPayment(long previousMonthLeft, long monthlyPayment) {
     double debtRate = 0.0015;
-    int totalPayment = (int) (debt * (1+debtRate));
-    int month = 360;
-    double monthlyPayment;
-    double totalDebt = Math.pow(debt*debtRate,month);
+    long withInterest = (long) (previousMonthLeft * (1 + debtRate));
+    return withInterest - monthlyPayment;
   }
 }
 

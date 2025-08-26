@@ -14,5 +14,7 @@ public class BinarySearchBasicTest {
 
     int target3 = 38;
     System.out.println("Target " + target3 + " found at index: " + bs.FindFirstGreaterOrEqualValue(arr, target3));
+
+    System.out.println("monthlyPayment: " + bs.calculateMonthlyPayment());
   }
 }
