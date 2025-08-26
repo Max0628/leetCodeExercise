@@ -101,5 +101,14 @@ public class BinarySearchBasic {
     // answer will always be in the right pointer.
     return numbers[right];
   }
+
+  public int calculateMonthlyPayment(){
+    double debt = 20000000;
+    double debtRate = 0.0015;
+    int totalPayment = (int) (debt * (1+debtRate));
+    int month = 360;
+    double monthlyPayment;
+    double totalDebt = Math.pow(debt*debtRate,month);
+  }
 }
 
