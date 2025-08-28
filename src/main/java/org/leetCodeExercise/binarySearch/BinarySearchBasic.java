@@ -170,5 +170,49 @@ public class BinarySearchBasic {
     long withInterest = (long) (previousMonthLeft * (1 + debtRate));
     return withInterest - monthlyPayment;
   }
+
+  /**
+   * Use Binary Search to do the issue.
+   *
+   * @return
+   */
+  public long calculateMonthlyPaymentBinarySearch() {
+    long totalDebt = 20000000;
+
+    // left pointer
+    long minPerMonthPaymeny = totalDebt / 360;
+
+    // right pointer
+    long maxPerMonthPaymeny = totalDebt;
+
+    // left > right exit while loop.
+    while (minPerMonthPaymeny <= maxPerMonthPaymeny) {
+      long mid = minPerMonthPaymeny + (maxPerMonthPaymeny - minPerMonthPaymeny) / 2;
+
+      //run loop
+      long result = run360times(totalDebt, mid);
+      if (result <= 0) {
+        maxPerMonthPaymeny = mid - 1;
+      } else {
+        minPerMonthPaymeny = mid + 1;
+      }
+    }
+    return minPerMonthPaymeny;
+  }
+
+  public long run360times(long totalDebt, long monthlyPayment) {
+    long currentLeft = totalDebt;
+    // force to run 360 times.
+    for (int month = 0; month <= 360; month++) {
+      currentLeft = calculateMonthlyPayment(currentLeft, monthlyPayment);
+    }
+    return currentLeft;
+  }
+
+  public long calculateMonthlyPayment(long previousMonthLeft, long monthlyPayment) {
+    double debtRate = 0.0015;
+    long withInterest = (long) (previousMonthLeft * (1 + debtRate));
+    return withInterest - monthlyPayment;
+  }
 }
 
