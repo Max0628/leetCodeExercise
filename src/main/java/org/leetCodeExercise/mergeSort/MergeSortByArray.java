@@ -1,9 +1,12 @@
 package org.leetCodeExercise.mergeSort;
 
+import java.util.Arrays;
+
 public class MergeSortByArray {
 
   /**
    * merge sort practice by array & change the originalArray.
+   *
    * @param array
    *
    * @return
@@ -83,5 +86,77 @@ public class MergeSortByArray {
     return originalArray;
   }
 
-}
 
+  /**
+   * DescriptionL:
+   * another case for practice.
+   *
+   * @param array
+   *
+   * @return
+   */
+  public int[] mergeSortEvenOdd(int[] array) {
+
+    if (array.length <= 1) {
+      return array;
+    }
+
+    int mid = array.length / 2;
+    int[] left = new int[mid];
+    int[] right = new int[array.length - mid];
+
+    for (int i = 0; i < mid; i++) {
+      left[i] = array[i];
+    }
+
+    for (int j = mid; j < array.length; j++) {
+      right[j - mid] = array[j];
+    }
+
+    mergeSortEvenOdd(left);
+    mergeSortEvenOdd(right);
+    mergeWithEvenOddRule(array, left, right);
+
+
+    return array;
+  }
+
+  public int[] mergeWithEvenOddRule(int[] arr, int[] left, int[] right) {
+
+    int i = 0;
+    int j = 0;
+    int k = 0;
+    while (left.length > i && right.length > j) {
+      // compare even or odd
+      if ((left[i] % 2 == 0) && (right[j] % 2 != 0)) {
+        arr[k] = left[i];
+        i++;
+      } else if ((right[j] % 2 == 0) && (left[i] % 2 != 0)) {
+        arr[k] = right[j];
+        j++;
+      }
+      //compare big or small
+      else if (left[i] > right[j]) {
+        arr[k] = left[i];
+        i++;
+      } else {
+        arr[k] = right[j];
+        j++;
+      }
+      k++;
+    }
+
+    while (left.length > i) {
+      arr[k] = left[i];
+      i++;
+      k++;
+    }
+
+    while (right.length > j) {
+      arr[k] = right[j];
+      j++;
+      k++;
+    }
+    return arr;
+  }
+}
