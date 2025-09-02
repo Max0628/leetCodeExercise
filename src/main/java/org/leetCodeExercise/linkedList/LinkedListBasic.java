@@ -56,6 +56,69 @@ public class LinkedListBasic {
     current.next = newNode;
   }
 
+  /**
+   * Delete a node value from the linked list.
+   * Time Complexity: O(n) worst case need to traverse the entire list.
+   * Space Complexity: O(1) only constant extra space is used.
+   *
+   * @param val
+   */
+  public void deleteByValue(int val) {
+    if (head == null) {
+      // list is empty, noting need to delete.
+      return;
+    }
+
+    // case 1: the head is node to delete.
+    if (head.val == val) {
+
+      // make the original head a "orphan node", GC will clean it.
+      head = head.next;
+      return;
+    }
+
+    //case 2: search the node before the target.
+    Node current = head;
+    while (current.next != null && current.next.val != val) {
+      current = current.next;
+    }
+    // exit the while loop means get the value.
+
+    //case 3: if found,skip the target node.
+    // if current.next(target) is not null, point the target to the next next element.
+    if (current.next != null) {
+      current.next = current.next.next;
+    }
+  }
+
+
+  /**
+   * Search a node by value in the linked list.
+   * Time Complexity: O(n) worst case need to traverse the entire list.
+   * Space Complexity: O(1) only a constant amout of extra space is used. "Node current = head;"
+   *
+   * @param val
+   *
+   * @return ture if the value is existed in the list.
+   */
+  public boolean search(int val) {
+    Node current = head;
+
+    // if head is not empty
+    while (current != null) {
+
+      // match.
+      if (current.val == val) {
+        return true;
+      }
+
+      // move to next node.
+      current = current.next;
+    }
+    // the list is empty.
+    return false;
+  }
+
   // print the list.
   public void printList(LinkedListBasic linkedList) {
     Node current = head;
