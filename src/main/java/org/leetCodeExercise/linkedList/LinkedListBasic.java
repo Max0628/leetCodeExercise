@@ -4,12 +4,16 @@ package org.leetCodeExercise.linkedList;
 public class LinkedListBasic {
 
   class Node {
+    // current node value
     int val;
+    // next node's object
     Node next;
 
     // constructure
     Node(int val) {
+      // when create a Node, put value in Node.
       this.val = val;
+      // initialize
       this.next = null;
     }
   }
