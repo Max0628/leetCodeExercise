@@ -12,6 +12,7 @@ public class PriorityQueue {
     this.capacity = capacity;
   }
 
+  // O(log n)
   public void insert(int val) {
 
     // Case: heap is full.
@@ -27,6 +28,7 @@ public class PriorityQueue {
     size++;
   }
 
+  // O(1)
   // took out min value, but don't delete it.
   public int peek() {
     if (size == 0) {
@@ -35,6 +37,7 @@ public class PriorityQueue {
     return heap[0];
   }
 
+  //O(log n)
   public int poll() {
     if (size == 0) {
       throw new IllegalArgumentException("Heap is Empty");
