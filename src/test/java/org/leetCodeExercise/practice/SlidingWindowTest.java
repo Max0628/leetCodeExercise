@@ -11,10 +11,20 @@ public class SlidingWindowTest {
 //    test(sw, "abcabcbb", 3, "With repeats");
 //    test(sw, "bbbbb", 1, "All same char");
     test(sw, "pwwkew", 3, "Complex case");
+    testV2(sw, "pwwkew", 3, "Complex case");
   }
 
   private static void test(SlidingWindow sw, String input, int expected, String description) {
     int result = sw.lengthOfLongestSubstring(input);
+    if (result == expected) {
+      System.out.println("[PASS] " + description + ": input='" + input + "' result=" + result);
+    } else {
+      System.out.println("[FAIL] " + description + ": input='" + input + "' result=" + result + " expected=" + expected);
+    }
+  }
+
+  private static void testV2(SlidingWindow sw, String input, int expected, String description) {
+    int result = sw.lengthOfLongestSubstringV2(input);
     if (result == expected) {
       System.out.println("[PASS] " + description + ": input='" + input + "' result=" + result);
     } else {

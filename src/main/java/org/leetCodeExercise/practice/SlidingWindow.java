@@ -30,4 +30,36 @@ public class SlidingWindow {
     }
     return max;
   }
+
+  public int lengthOfLongestSubstringV2(String s) {
+    if (s == null || s.length() == 0) {
+      return 0;
+    }
+
+    Map<Character, Integer> map = new HashMap<>();
+    int left = 0;
+    int right = 0;
+    int maxSize = 0;
+
+    // if right pointer is equals to last element of string, exit loop.
+    while (right < s.length()) {
+      char c = s.charAt(right);
+
+      // if map doesn't contain element, just go and put current element in.
+      // if map contain current element, and this element is in the current windows interval.
+      if (map.containsKey(c) && map.get(c) >= left) {
+        // first move the left index to current element's index in the map.
+        // and move the index + 1, because old index contain the element.
+        left = map.get(c) + 1;
+      }
+
+      map.put(c, right);
+      maxSize = Math.max(maxSize, right - left + 1);
+
+      // every time move right pointer +1;
+      right++;
+    }
+
+    return maxSize;
+  }
 }
