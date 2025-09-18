@@ -1,12 +1,20 @@
 package org.leetCodeExercise.practice;
 
-import java.nio.charset.CoderResult;
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Queue;
 
 public class GraphNumIslands {
 
+// DFS version
+  /** Thinking process:
+   1. The input is a 2D array (matrix), which we can treat as a grid map.
+   2. The goal is to count how many "islands" are in the grid. An island is a group of '1's (land) connected up, down, left, or right.
+   3. To find all land on the same island, start from a '1' and check its four neighbors. If a neighbor is also '1', keep exploring from there.
+   4. This process is called "finding connected components" in graph theory. We can use DFS (Depth-First Search) to do this, which is easy to write with recursion.
+   5. Edge case: If the grid is null or empty, just return 0.
+   6. Time complexity: O(m*n), where m is the number of rows and n is the number of columns. Every cell is visited at most once.
+   7. Space complexity: O(m*n) in the worst case, because of the recursion stack if the whole grid is land.
+   **/
   public int numIslands(char[][] grid) {
     // because paras is a two detention array, use Adjacent Matrix.
     // edge case.
@@ -50,6 +58,16 @@ public class GraphNumIslands {
     dfs(grid, i, j + 1, m, n); // right
   }
 
+
+  //BFS version
+  /**
+   1. use for loop to traverse to an element.
+   2. if current is '1', it means we find a new island, count ++.
+   3. we change this element to '0', and push this element to queue.
+   4. checking if the queue is not empty.
+   5. poll the head element from queue, and :
+   6. checking the current element's neighbor, if it's '1', change it to '0'.
+   */
   public int numIslandsV2(char[][] grid) {
     //edge case.
     if (grid == null || grid.length == 0) {
@@ -118,26 +136,3 @@ public class GraphNumIslands {
     }
   }
 }
-// DFS version
-// If a cell is connected to other '1's (land) in the top, bottom, left, or right direction, they all belong to the same island.
-// When checking a cell, if its neighbor is '1', keep checking that neighbor's neighbors, until all connected land is found.
-
-/** Thinking process:
- 1. The input is a 2D array (matrix), which we can treat as a grid map.
- 2. The goal is to count how many "islands" are in the grid. An island is a group of '1's (land) connected up, down, left, or right.
- 3. To find all land on the same island, start from a '1' and check its four neighbors. If a neighbor is also '1', keep exploring from there.
- 4. This process is called "finding connected components" in graph theory. We can use DFS (Depth-First Search) to do this, which is easy to write with recursion.
- 5. Edge case: If the grid is null or empty, just return 0.
- 6. Time complexity: O(m*n), where m is the number of rows and n is the number of columns. Every cell is visited at most once.
- 7. Space complexity: O(m*n) in the worst case, because of the recursion stack if the whole grid is land.
-**/
-
-//BFS version
-/**
-  1. use for loop to traverse to an element.
-  2. if current is '1', it means we find a new island, count ++.
-  3. we change this element to '0', and push this element to queue.
-  4. checking if the queue is not empty.
-  5. poll the head element from queue, and :
-  6. checking the current element's neighbor, if it's '1', change it to '0'.
- */
