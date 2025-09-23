@@ -63,3 +63,71 @@ Code:
 Analysis:
 Compile error:
  */
+
+/*
+// java
+public class Solution {
+    static int[] dx = {0, 0, 1, -1};
+    static int[] dy = {1, -1, 0, 0};
+    static int directionCount = 4;
+
+    public int minimumObstacle(int[][] grid) {
+        int n = grid.length;
+        int m = grid[0].length;
+
+        int[][] id = new int[n][m];
+        int[] dis = new int[n * m + 1];
+        int[] vis = new int[n * m + 1];
+        int[] locationX = new int[n * m + 1];
+        int[] locationY = new int[n * m + 1];
+
+        int index = 0;
+        for (int i = 0; i < n; i++) {
+            for (int j = 0; j < m; j++) {
+                id[i][j] = ++index;
+                dis[index] = -1;
+                locationX[index] = i;
+                locationY[index] = j;
+            }
+        }
+
+        Deque<Integer> queue = new ArrayDeque<>();
+        queue.addFirst(1);
+        dis[1] = 0;
+
+        while (!queue.isEmpty()) {
+            int currentNode = queue.pollFirst();
+            if (vis[currentNode] == 1) {
+                continue;
+            }
+            vis[currentNode] = 1;
+
+            int x = locationX[currentNode];
+            int y = locationY[currentNode];
+
+            for (int i = 0; i < directionCount; i++) {
+                int targetX = x + dx[i];
+                int targetY = y + dy[i];
+                if (targetX >= 0 && targetX < n && targetY >= 0 && targetY < m) {
+                    int newDistance = dis[currentNode];
+                    int targetId = id[targetX][targetY];
+                    if (grid[targetX][targetY] == 1) {
+                        newDistance++;
+                    }
+
+                    if (dis[targetId] == -1 || dis[targetId] > newDistance) {
+                        dis[targetId] = newDistance;
+                        if (grid[targetX][targetY] == 1) {
+                            queue.addLast(targetId);
+                        } else {
+                            queue.addFirst(targetId);
+                        }
+                    }
+                }
+            }
+        }
+
+        return dis[id[n - 1][m - 1]];
+    }
+}
+ */
