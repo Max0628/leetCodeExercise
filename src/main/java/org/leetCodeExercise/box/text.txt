@@ -1,0 +1,91 @@
+
+Functional Requirements
+
+    - User Management
+
+        - basic requirement:
+
+            - Register & Login
+                - 1. User can register or login by google account.
+
+            - Friend System & User Profile
+                - 1. User can edit it's self info.
+                - 2. User can add friend's by enter friend's id.
+                - 3. User can check it's friends current status, online or offline.
+                - 5. User can check it's friends info.
+                - 4. User can peek the last message talking to it's friend.
+                - 5. User can edit it's introduction & avatar.
+
+            - Common chat details.
+                - 1. chat message have timestamp.
+                - 2. chat message have read / unread.
+                - 3. User can unsend a message in 1 hour but it will still show a unsend message.
+
+            - 1 on 1 chat
+                - 1. User can start 1 on 1 chat with it's friend by clicking the button.
+
+            - Group chat
+                - 1. User can join to group chat by invited others through groupId.
+                - 2. Group chat's member amout at least 100 people for each one.
+
+        - Advance functions (nice to have)
+            - chat related
+                - Search Functionality (Search friend's in User List).
+                - multi-device Support (Sync across devices).
+                - search chat History by words.
+                - message encryption (end-to-end encryption).
+            - Notifications (Push Notifications for New Messages).
+                - is it sutiable in mobile or web app.
+            - Media Sharing (Images, Videos, Files)
+                - pictures ?
+                - vedios?
+                - sound message?
+
+    - BackStage/Admin Panel
+        - User Management (Ban, Suspend Users)
+        - Analytics Dashboard (User Activity, Message Volume)
+
+Non-functional Requirements
+    - Scalability (Handle a large number of concurrent users)
+    - Low Latency (Real-time message delivery)
+    - High Availability (Minimal Downtime)
+
+Back of Envelope Esitmation
+API Design
+Data Modeling
+High Level Design
+Follow Up (How to scale?)
+
+tech stack
+    - Frontend: React Native for cross-platform mobile app development
+    - Backend: Java Spring boot or Python FastAPI for building RESTful APIs
+    - Database:
+        - RDBMS: PostgreSQL for relational data (user profiles, message metadata)
+        - NoSQL: MongoDB or Cassandra for storing message history and media metadata
+        - KV Store: MongoDB for fast access to user sessions and presence information
+        - In-Memory Data Store: Redis for caching and real-time presence tracking
+    - Messaging Queue: Apache Kafka for handling message delivery and notifications
+    - Real-time Communication: WebSocket (Socket.io) for real-time messaging
+    - Authentication: JWT (JSON Web Tokens) for secure user authentication
+    - Media Storage: AWS S3 for storing media files
+    - Push Notifications: Firebase Cloud Messaging (FCM) for sending push notifications
+    - Deployment: Docker and Kubernetes for containerization and orchestration
+    - Observability:
+        - Metrics: Prometheus for monitoring application performance
+        - Logging: ELK Stack (Elasticsearch, Logstash, Kibana) for centralized
+        - Tracing: Jaeger for distributed tracing of requests
+    - CI/CD: Jenkins or GitHub Actions for continuous integration and deployment
+    - Load Balancing: NGINX or AWS ELB for distributing incoming traffic
+    - API Gateway: Kong or AWS API Gateway for managing and routing API requests
+    - Security: TLS/SSL for secure data transmission, OAuth 2.0 for authorization
+
+third party API
+    -- google login
+    -- facebook login
+
+
+project structure
+    - MVC project
+    - three layer structure
+    - monorepo project
+-------------
