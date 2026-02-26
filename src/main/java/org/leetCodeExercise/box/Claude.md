@@ -15,6 +15,59 @@ This document outlines the architecture patterns used in this project, primarily
 - Avoid to use the Static Class and Inner Class
 - Use Lombok library functions by default
 
+#### Logging Standards (Mandatory)
+
+All logging must support **Service Level Indicators (SLI)** measurement and **Kafka Stream + ELK/PLG** architecture.
+
+- **Log Format Pattern (Unified)**
+  ```
+  [Module][Operation] Status. key1={}, key2={}
+  ```
+  - **Module**: Service/Adapter name, e.g., `Goods-Service`, `Payment-Adapter`, `Kafka-Publisher`
+  - **Operation**: Operation type, e.g., `Query`, `Update`, `API`, `Publish`, `Consume`
+  - **Status**: Result indicator, e.g., `Start.`, `Success.`, `Failed!`, `Retry triggered.`, `Fallback activated.`
+  - **key={}**: Use equals sign `=` for key-value pairs (better support for log parsing and key-value structure)
+
+- **Log Level Guidelines**
+
+  | Level | Usage | Alert | Example |
+  |-------|-------|-------|---------|
+  | **DEBUG** | Detailed diagnostic info. **Disabled in Production.** | No Alert | Cache hit/miss details |
+  | **INFO** | Critical path events, business state changes, SLI tracking (throughput, latency). | No Alert | `[Service][Query] Success. duration=125ms` |
+  | **WARN** | **Predictive anomalies**: External system jitter, retry triggered, cache miss with degradation, 4xx errors. | Non-immediate (if > N times/hour) | `[Adapter][API] Network error, retry triggered.` |
+  | **ERROR** | **Fatal errors**: DB connection failure, 5xx errors, unexpected RuntimeException, DLQ accumulation, data loss risk. | Immediate (P0) | `[Adapter][Fallback] Circuit open! action=ManualReview` |
+
+- **Mandatory Context (TraceID + Business Key + Duration)**
+  - **traceId**: Always include `MDC.get("traceId")` for distributed tracing 
+    (It could be injected by opentelemetry or custom Momomsgid utility)
+  - **Business Key**: Include business identifier (orderNo, goodsCode, userId, fileId)
+  - **duration**: Include `duration={}ms` for all operations (for latency tracking)
+  - **Input Params**: Include input parameters when ERROR occurs
+
+- **Examples**
+  ```java
+  // ✅ GOOD: Structured logging with full context
+  log.info("[Goods-Service][Query] Success. goodsCode={}, duration={}ms", goodsCode, System.currentTimeMillis() - startTime);
+  
+  // ✅ GOOD: WARN for retriable errors
+  log.warn("[Payment-Adapter][API] Network error, retry triggered. orderNo={}, duration={}ms, cause={}", orderNo, duration, e.getMessage());
+  
+  // ✅ GOOD: ERROR for critical failures with stack trace
+  log.error("[Kafka-Publisher][Fallback] Circuit open! orderNo={}, action=QueueForRetry", orderNo, e);
+  
+  // ❌ BAD: Missing context and business key
+  log.error("Update failed");
+  
+  // ❌ BAD: Wrong log level (should be WARN for retriable error)
+  log.error("Network timeout, will retry", e);
+  ```
+
+- **Performance Best Practices**
+  - Use async appenders to avoid blocking application threads
+  - Use `log.isDebugEnabled()` before expensive string operations
+  - Avoid logging in high-frequency loops (use sampling: log every Nth iteration)
+  - Use `{}` placeholders instead of string concatenation
+
 ---
 
 ### ## 1. Controller Pattern (Infrastructure Layer)
@@ -81,28 +134,64 @@ This document outlines the architecture patterns used in this project, primarily
     // ✅ CORRECT: Read-only transaction for query operations
     @Transactional(value = "tx0", readOnly = true, propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
     public List<GoodsDTO> getGoodsByCodeList(List<String> goodsCodes) {
-      log.info("Finding goods by codes: {}", goodsCodes);
+      // [INFO] Include business key, traceId, and operation start
+      log.info("[Goods-Service][Query] Start. goodsCodes={}, count={}, traceId={}", 
+          goodsCodes, goodsCodes.size(), MDC.get("traceId"));
+      long startTime = System.currentTimeMillis();
 
-      List<GoodsEntity> entities = goodsRepository.findByGoodsCodes(goodsCodes);
+      try {
+        List<GoodsEntity> entities = goodsRepository.findByGoodsCodes(goodsCodes);
 
-      return entities.stream()
-          .map(this::convertToDTO)
-          .collect(Collectors.toList());
+        // [INFO] Success path with duration for SLI tracking
+        log.info("[Goods-Service][Query] Success. count={}, duration={}ms", 
+            entities.size(), System.currentTimeMillis() - startTime);
+
+        return entities.stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+
+      } catch (Exception e) {
+        // [ERROR] Include full context with stack trace
+        log.error("[Goods-Service][Query] Failed! goodsCodes={}, duration={}ms, cause={}", 
+            goodsCodes, System.currentTimeMillis() - startTime, e.getMessage(), e);
+        throw e;
+      }
     }
 
     // ✅ CORRECT: Write transaction for update operations
     @Transactional(value = "tx0", propagation = Propagation.REQUIRED, rollbackFor = Exception.class)
     public void updateGoods(GoodsDTO dto) {
-      log.info("Updating goods: {}", dto.getGoodsCode());
+      // [INFO] Command operation with business key
+      log.info("[Goods-Service][Update] Start. goodsCode={}, traceId={}", 
+          dto.getGoodsCode(), MDC.get("traceId"));
+      long startTime = System.currentTimeMillis();
 
-      GoodsEntity entity = goodsRepository.findById(dto.getGoodsCode())
-          .orElseThrow(() -> new GoodsNotFoundException(dto.getGoodsCode()));
+      try {
+        GoodsEntity entity = goodsRepository.findById(dto.getGoodsCode())
+            .orElseThrow(() -> new GoodsNotFoundException(dto.getGoodsCode()));
 
-      // Update entity
-      entity.setGoodsName(dto.getGoodsName());
-      entity.setSalePrice(dto.getSalePrice());
+        // Update entity
+        entity.setGoodsName(dto.getGoodsName());
+        entity.setSalePrice(dto.getSalePrice());
 
-      goodsRepository.update(entity);
+        goodsRepository.update(entity);
+
+        // [INFO] Success with duration
+        log.info("[Goods-Service][Update] Success. goodsCode={}, duration={}ms", 
+            dto.getGoodsCode(), System.currentTimeMillis() - startTime);
+
+      } catch (GoodsNotFoundException e) {
+        // [WARN] Expected business exception
+        log.warn("[Goods-Service][Update] Not found. goodsCode={}, duration={}ms", 
+            dto.getGoodsCode(), System.currentTimeMillis() - startTime);
+        throw e;
+
+      } catch (Exception e) {
+        // [ERROR] Unexpected error with full context
+        log.error("[Goods-Service][Update] Failed! goodsCode={}, input={}, duration={}ms, cause={}", 
+            dto.getGoodsCode(), dto, System.currentTimeMillis() - startTime, e.getMessage(), e);
+        throw e;
+      }
     }
 
     private GoodsDTO convertToDTO(GoodsEntity entity) {
@@ -202,6 +291,7 @@ This document outlines the architecture patterns used in this project, primarily
 
   ```java
   @Component
+  @Slf4j
   public class DualDataSourceJdbcExecutor {
 
       @Autowired
@@ -216,11 +306,31 @@ This document outlines the architecture patterns used in this project, primarily
               String sql,
               RowMapper<T> mapper,
               Object... args) {
+          long startTime = System.currentTimeMillis();
+          
           try {
-              return oseTemplate.query(sql, mapper, args);
+              List<T> result = oseTemplate.query(sql, mapper, args);
+              log.info("[DataSource][OSE] Query success. rows={}, duration={}ms", 
+                  result.size(), System.currentTimeMillis() - startTime);
+              return result;
+              
           } catch (Exception e) {
-              log.error("OSE query failed, switching to EXA", e);
-              return exaTemplate.query(sql, mapper, args);
+              // [WARN] OSE failed, triggering failover to EXA
+              log.warn("[DataSource][Failover] OSE failed, switching to EXA. duration={}ms, cause={}", 
+                  System.currentTimeMillis() - startTime, e.getMessage());
+              
+              try {
+                  List<T> result = exaTemplate.query(sql, mapper, args);
+                  log.info("[DataSource][EXA] Failover success. rows={}, duration={}ms", 
+                      result.size(), System.currentTimeMillis() - startTime);
+                  return result;
+                  
+              } catch (Exception exaException) {
+                  // [ERROR] Both datasources failed - critical error
+                  log.error("[DataSource][Failover] Both OSE and EXA failed! duration={}ms", 
+                      System.currentTimeMillis() - startTime, exaException);
+                  throw exaException;
+              }
           }
       }
   }
@@ -387,7 +497,10 @@ public class ThirdPartyPaymentAdapter implements PaymentGateway {
     @Retry(name = "paymentService", fallbackMethod = "paymentFallback")
     @TimeLimiter(name = "paymentService")
     public PaymentResult processPayment(PaymentRequest request) {
-        log.info("Processing payment for order: {}", request.getOrderNo());
+        // [INFO] External call start - include business key, amount, traceId for tracking
+        log.info("[Payment-Adapter][API] Start. orderNo={}, amount={}, traceId={}", 
+            request.getOrderNo(), request.getAmount(), MDC.get("traceId"));
+        long startTime = System.currentTimeMillis();
 
         try {
             // 1. Map Domain object to API request
@@ -408,40 +521,53 @@ public class ThirdPartyPaymentAdapter implements PaymentGateway {
                 throw new PaymentBusinessException(errorCode, response.getBody().getErrorMessage());
             }
 
+            // [INFO] External call success - include transaction ID and duration
+            log.info("[Payment-Adapter][API] Success. orderNo={}, txnId={}, duration={}ms", 
+                request.getOrderNo(), response.getBody().getTransactionId(), 
+                System.currentTimeMillis() - startTime);
+
             // 4. Map API response to Domain object
             return mapToPaymentResult(response.getBody());
 
         } catch (PaymentBusinessException e) {
-            // Business exception - do not retry
-            log.error("Payment business error: {}", e.getMessage());
+            // [ERROR] Business exception - do not retry, requires manual review
+            log.error("[Payment-Adapter][API] Business error! orderNo={}, errorCode={}, duration={}ms", 
+                request.getOrderNo(), e.getErrorCode(), System.currentTimeMillis() - startTime);
             throw e;
 
         } catch (ResourceAccessException e) {
-            // I/O Exception (network, connection errors)
-            log.error("Payment I/O error: {}", e.getMessage(), e);
+            // [WARN] I/O Exception - network/connection errors, retry will be triggered
+            log.warn("[Payment-Adapter][API] Network error, retry triggered. orderNo={}, duration={}ms, cause={}", 
+                request.getOrderNo(), System.currentTimeMillis() - startTime, e.getMessage());
             throw new PaymentIOException("Network error during payment", e);
 
         } catch (HttpClientErrorException e) {
-            // HTTP 4xx errors
-            log.error("Payment client error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
+            // [ERROR] HTTP 4xx errors - invalid request from our side
+            log.error("[Payment-Adapter][API] Client error (4xx)! orderNo={}, status={}, response={}, duration={}ms", 
+                request.getOrderNo(), e.getStatusCode(), e.getResponseBodyAsString(), 
+                System.currentTimeMillis() - startTime);
             throw new PaymentValidationException("Invalid payment request", e);
 
         } catch (HttpServerErrorException e) {
-            // HTTP 5xx errors (may retry)
-            log.error("Payment server error: {} - {}", e.getStatusCode(), e.getResponseBodyAsString());
+            // [WARN] HTTP 5xx errors - external system issue, may retry
+            log.warn("[Payment-Adapter][API] Server error (5xx), retry triggered. orderNo={}, status={}, duration={}ms", 
+                request.getOrderNo(), e.getStatusCode(), System.currentTimeMillis() - startTime);
             throw new PaymentServerException("Payment service unavailable", e);
 
         } catch (Exception e) {
-            // Unexpected exception
-            log.error("Unexpected payment error", e);
+            // [ERROR] Unexpected exception - requires investigation
+            log.error("[Payment-Adapter][API] Unexpected error! orderNo={}, amount={}, duration={}ms, cause={}", 
+                request.getOrderNo(), request.getAmount(), 
+                System.currentTimeMillis() - startTime, e.getMessage(), e);
             throw new PaymentSystemException("Payment system error", e);
         }
     }
 
     // Fallback method for circuit breaker
     private PaymentResult paymentFallback(PaymentRequest request, Exception e) {
-        log.error("Payment fallback triggered for order: {}, reason: {}", 
-            request.getOrderNo(), e.getMessage());
+        // [ERROR] Circuit breaker open - service degradation, requires immediate attention
+        log.error("[Payment-Adapter][Fallback] Circuit open! orderNo={}, amount={}, triggerCause={}, action=QueueForRetry", 
+            request.getOrderNo(), request.getAmount(), e.getClass().getSimpleName());
 
         // Degraded service: return pending status, queue for retry
         return PaymentResult.builder()
@@ -566,7 +692,10 @@ public class KafkaOrderEventPublisher implements OrderEventPublisher {
     @CircuitBreaker(name = "kafkaPublisher", fallbackMethod = "publishOrderCreatedFallback")
     @Retry(name = "kafkaPublisher")
     public void publishOrderCreated(OrderCreatedEvent event) {
-        log.info("Publishing order created event: {}", event.getOrderNo());
+        // [INFO] Event publish start - include business key, event type, traceId
+        log.info("[Kafka-Publisher][OrderCreated] Start. orderNo={}, topic={}, traceId={}", 
+            event.getOrderNo(), orderCreatedTopic, MDC.get("traceId"));
+        long startTime = System.currentTimeMillis();
 
         try {
             // 1. Validate event (Business validation)
@@ -579,35 +708,46 @@ public class KafkaOrderEventPublisher implements OrderEventPublisher {
             // 3. Add callback for async result
             future.addCallback(
                 result -> {
-                    log.info("Order event published successfully: {} to partition: {}",
-                        event.getOrderNo(), result.getRecordMetadata().partition());
+                    // [INFO] Async publish success - include partition, offset, duration
+                    log.info("[Kafka-Publisher][OrderCreated] Success. orderNo={}, partition={}, offset={}, duration={}ms",
+                        event.getOrderNo(), 
+                        result.getRecordMetadata().partition(),
+                        result.getRecordMetadata().offset(),
+                        System.currentTimeMillis() - startTime);
                 },
                 ex -> {
+                    // [ERROR] Async publish failed
+                    log.error("[Kafka-Publisher][OrderCreated] Async failed! orderNo={}, cause={}",
+                        event.getOrderNo(), ex.getMessage(), ex);
                     handlePublishFailure(event, ex);
                 }
             );
 
         } catch (IllegalArgumentException e) {
-            // Business exception - invalid event
-            log.error("Invalid order event: {}", e.getMessage());
+            // [ERROR] Business exception - invalid event, do not retry
+            log.error("[Kafka-Publisher][OrderCreated] Validation failed! orderNo={}, eventType={}, cause={}", 
+                event.getOrderNo(), event.getClass().getSimpleName(), e.getMessage());
             throw new OrderEventValidationException("Invalid event data", e);
 
         } catch (SerializationException e) {
-            // Serialization exception
-            log.error("Event serialization error: {}", e.getMessage(), e);
+            // [ERROR] Serialization exception - data issue
+            log.error("[Kafka-Publisher][OrderCreated] Serialization failed! orderNo={}, eventType={}, cause={}", 
+                event.getOrderNo(), event.getClass().getSimpleName(), e.getMessage(), e);
             throw new OrderEventSerializationException("Failed to serialize event", e);
 
         } catch (Exception e) {
-            // Kafka connection or timeout exception
-            log.error("Failed to publish order event", e);
+            // [WARN] Kafka connection or timeout - retry will be triggered
+            log.warn("[Kafka-Publisher][OrderCreated] Publish failed, will retry. orderNo={}, duration={}ms, cause={}", 
+                event.getOrderNo(), System.currentTimeMillis() - startTime, e.getMessage());
             throw new OrderEventPublishException("Event publish failed", e);
         }
     }
 
     // Fallback: Store to database for retry
     private void publishOrderCreatedFallback(OrderCreatedEvent event, Exception e) {
-        log.error("Kafka publish fallback triggered for order: {}, storing to DB", 
-            event.getOrderNo(), e);
+        // [ERROR] Fallback to outbox pattern - circuit open
+        log.error("[Kafka-Publisher][Fallback] Circuit open, saving to outbox. orderNo={}, eventType={}, triggerCause={}", 
+            event.getOrderNo(), "ORDER_CREATED", e.getClass().getSimpleName());
 
         try {
             // Store event to database for later retry
@@ -622,10 +762,15 @@ public class KafkaOrderEventPublisher implements OrderEventPublisher {
                 .build();
 
             eventRepository.save(outbox);
-            log.info("Order event stored to outbox: {}", event.getOrderNo());
+            
+            // [INFO] Outbox save success
+            log.info("[Kafka-Publisher][Outbox] Saved. orderNo={}, eventId={}", 
+                event.getOrderNo(), outbox.getEventId());
 
         } catch (Exception dbException) {
-            log.error("Failed to store event to outbox, data loss risk!", dbException);
+            // [ERROR] Critical - both Kafka and DB failed, data loss risk (P0 Alert)
+            log.error("[Kafka-Publisher][Outbox] Failed to store! Data loss risk! orderNo={}, eventType={}", 
+                event.getOrderNo(), "ORDER_CREATED", dbException);
             // Alert monitoring system
             throw new CriticalEventLossException("Event may be lost", dbException);
         }
@@ -697,9 +842,17 @@ public class OrderEventConsumer {
     public void handleOrderCreatedEvent(
             @Payload OrderCreatedEvent event,
             @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
-            @Header(KafkaHeaders.RECEIVED_PARTITION_ID) int partition) {
+            @Header(KafkaHeaders.RECEIVED_PARTITION_ID) int partition,
+            @Header(KafkaHeaders.OFFSET) long offset) {
 
-        log.info("Received order created event: {} from partition: {}", event.getOrderNo(), partition);
+        // Set MDC context for consumer
+        MDC.put("traceId", event.getTraceId());
+        MDC.put("eventType", "ORDER_CREATED");
+
+        // [INFO] Event consumption start - include partition, offset
+        log.info("[Kafka-Consumer][OrderCreated] Received. orderNo={}, partition={}, offset={}, traceId={}", 
+            event.getOrderNo(), partition, offset, event.getTraceId());
+        long startTime = System.currentTimeMillis();
 
         try {
             // 1. Business validation
@@ -709,22 +862,31 @@ public class OrderEventConsumer {
 
             // 2. Process event
             orderService.processOrderCreatedEvent(event);
-            log.info("Order event processed successfully: {}", event.getOrderNo());
+            
+            // [INFO] Processing success - include duration
+            log.info("[Kafka-Consumer][OrderCreated] Processed success. orderNo={}, duration={}ms", 
+                event.getOrderNo(), System.currentTimeMillis() - startTime);
 
         } catch (OrderEventValidationException e) {
-            // Business exception - send to DLT, don't retry
-            log.error("Invalid order event, sending to DLT: {}", e.getMessage());
+            // [ERROR] Business exception - send to DLT, don't retry
+            log.error("[Kafka-Consumer][OrderCreated] Validation failed, sending to DLT. orderNo={}, cause={}", 
+                event.getOrderNo(), e.getMessage());
             throw e;
 
         } catch (DataAccessException e) {
-            // DB exception - retry
-            log.error("Database error processing event, will retry", e);
+            // [WARN] DB exception - retry will be triggered
+            log.warn("[Kafka-Consumer][OrderCreated] DB error, will retry. orderNo={}, duration={}ms, cause={}", 
+                event.getOrderNo(), System.currentTimeMillis() - startTime, e.getMessage());
             throw new OrderEventProcessingException("DB error", e);
 
         } catch (Exception e) {
-            // Unexpected error - retry
-            log.error("Unexpected error processing event", e);
+            // [ERROR] Unexpected error - retry will be triggered
+            log.error("[Kafka-Consumer][OrderCreated] Processing failed! orderNo={}, duration={}ms, cause={}", 
+                event.getOrderNo(), System.currentTimeMillis() - startTime, e.getMessage(), e);
             throw new OrderEventProcessingException("Processing failed", e);
+            
+        } finally {
+            MDC.clear();
         }
     }
 
@@ -733,7 +895,8 @@ public class OrderEventConsumer {
             @Payload OrderCreatedEvent event,
             @Header(KafkaHeaders.EXCEPTION_MESSAGE) String exceptionMessage) {
         
-        log.error("Message sent to DLT: order={}, error={}", 
+        // [ERROR] DLQ - requires manual intervention (P0 Alert)
+        log.error("[Kafka-DLT][OrderCreated] Sent to DLQ! orderNo={}, errorMessage={}, action=ManualReview", 
             event.getOrderNo(), exceptionMessage);
         
         // Store to DB for manual review
@@ -796,7 +959,8 @@ public class RedisCacheAdapter implements CacheGateway {
     @CircuitBreaker(name = "redisCache", fallbackMethod = "getFallback")
     @TimeLimiter(name = "redisCache")
     public <T> Optional<T> get(String key, Class<T> type) {
-        log.debug("Getting cache value for key: {}", key);
+        // [DEBUG] Cache lookup - only for troubleshooting, disabled in production
+        log.debug("[Cache-Adapter][Get] Lookup. key={}", key);
 
         try {
             // 1. Validate key (Business validation)
@@ -805,38 +969,46 @@ public class RedisCacheAdapter implements CacheGateway {
             // 2. Get from Redis
             Object value = redisTemplate.opsForValue().get(key);
             if (value == null) {
-                log.debug("Cache miss for key: {}", key);
+                // [DEBUG] Cache miss - use DEBUG to avoid noise
+                log.debug("[Cache-Adapter][Get] Cache miss. key={}", key);
                 return Optional.empty();
             }
 
             // 3. Deserialize
             T result = objectMapper.convertValue(value, type);
-            log.debug("Cache hit for key: {}", key);
+            
+            // [DEBUG] Cache hit - use DEBUG to avoid noise
+            log.debug("[Cache-Adapter][Get] Cache hit. key={}", key);
             return Optional.of(result);
 
         } catch (IllegalArgumentException e) {
-            // Business exception - invalid key format
-            log.error("Invalid cache key: {}", e.getMessage());
+            // [ERROR] Business exception - invalid key format
+            log.error("[Cache-Adapter][Get] Invalid key format! key={}, cause={}", 
+                key, e.getMessage());
             throw new CacheKeyValidationException("Invalid key format", e);
 
         } catch (SerializationException e) {
-            // Serialization exception
-            log.error("Cache deserialization error for key: {}", key, e);
+            // [WARN] Serialization exception - treat as cache miss, don't break flow
+            log.warn("[Cache-Adapter][Get] Deserialization failed, treating as miss. key={}, cause={}", 
+                key, e.getMessage());
             return Optional.empty(); // Treat as cache miss
 
         } catch (RedisConnectionFailureException e) {
-            // Connection exception
-            log.error("Redis connection failed, cache unavailable", e);
+            // [WARN] Connection exception - Redis unavailable, will fallback
+            log.warn("[Cache-Adapter][Get] Connection failed, cache unavailable. key={}, cause={}", 
+                key, e.getMessage());
             throw new CacheConnectionException("Redis unavailable", e);
 
         } catch (QueryTimeoutException e) {
-            // Timeout exception
-            log.error("Redis query timeout for key: {}", key, e);
+            // [WARN] Timeout exception - cache query timeout
+            log.warn("[Cache-Adapter][Get] Query timeout. key={}, cause={}", 
+                key, e.getMessage());
             throw new CacheTimeoutException("Cache timeout", e);
 
         } catch (Exception e) {
-            // Unexpected exception
-            log.error("Unexpected cache error for key: {}", key, e);
+            // [WARN] Unexpected exception - degrade gracefully, don't break business flow
+            log.warn("[Cache-Adapter][Get] Unexpected error, degrading gracefully. key={}, cause={}", 
+                key, e.getMessage());
             return Optional.empty(); // Degrade gracefully
         }
     }
@@ -844,7 +1016,8 @@ public class RedisCacheAdapter implements CacheGateway {
     @Override
     @CircuitBreaker(name = "redisCache", fallbackMethod = "putFallback")
     public <T> void put(String key, T value, Duration ttl) {
-        log.debug("Putting cache value for key: {}, ttl: {}", key, ttl);
+        // [DEBUG] Cache write - use DEBUG to avoid noise
+        log.debug("[Cache-Adapter][Put] Start. key={}, ttl={}", key, ttl);
 
         try {
             validateKey(key);
@@ -853,22 +1026,30 @@ public class RedisCacheAdapter implements CacheGateway {
             }
 
             redisTemplate.opsForValue().set(key, value, ttl);
-            log.debug("Cache value set successfully for key: {}", key);
+            log.debug("[Cache-Adapter][Put] Success. key={}", key);
 
         } catch (IllegalArgumentException e) {
-            log.error("Invalid cache put request: {}", e.getMessage());
+            // [ERROR] Invalid cache put request
+            log.error("[Cache-Adapter][Put] Invalid request! key={}, cause={}", 
+                key, e.getMessage());
             throw new CacheKeyValidationException("Invalid cache put", e);
 
         } catch (SerializationException e) {
-            log.error("Cache serialization error for key: {}", key, e);
+            // [ERROR] Serialization error - data issue
+            log.error("[Cache-Adapter][Put] Serialization failed! key={}, cause={}", 
+                key, e.getMessage(), e);
             throw new CacheSerializationException("Serialization failed", e);
 
         } catch (RedisConnectionFailureException e) {
-            log.warn("Redis unavailable, cache put skipped for key: {}", key);
+            // [WARN] Redis unavailable - cache write failure should not break business flow
+            log.warn("[Cache-Adapter][Put] Connection failed, cache put skipped. key={}, cause={}", 
+                key, e.getMessage());
             // Don't throw - cache write failure should not break business flow
 
         } catch (Exception e) {
-            log.error("Unexpected error putting cache for key: {}", key, e);
+            // [WARN] Unexpected error - swallow exception, cache write is not critical
+            log.warn("[Cache-Adapter][Put] Unexpected error, cache write skipped. key={}, cause={}", 
+                key, e.getMessage());
             // Swallow exception - cache write is not critical
         }
     }
@@ -878,23 +1059,27 @@ public class RedisCacheAdapter implements CacheGateway {
         try {
             validateKey(key);
             redisTemplate.delete(key);
-            log.debug("Cache deleted for key: {}", key);
+            log.debug("[Cache-Adapter][Delete] Success. key={}", key);
+            
         } catch (Exception e) {
-            log.error("Error deleting cache for key: {}", key, e);
+            // [WARN] Cache delete failure is acceptable
+            log.warn("[Cache-Adapter][Delete] Failed, cache invalidation skipped. key={}, cause={}", 
+                key, e.getMessage());
             // Swallow exception - cache delete failure is acceptable
         }
     }
 
     // Fallback for get operation
     private <T> Optional<T> getFallback(String key, Class<T> type, Exception e) {
-        log.warn("Redis cache fallback triggered for key: {}, error: {}", 
-            key, e.getMessage());
+        log.warn("[Cache-Adapter][Fallback] Get fallback triggered. key={}, action=QueryDB", 
+            key);
         return Optional.empty(); // Cache miss, query will hit DB
     }
 
     // Fallback for put operation
     private <T> void putFallback(String key, T value, Duration ttl, Exception e) {
-        log.warn("Redis cache put fallback, skipping cache for key: {}", key);
+        log.warn("[Cache-Adapter][Fallback] Put fallback triggered. key={}, action=SkipCache", 
+            key);
         // Do nothing - cache write failure is acceptable
     }
 
@@ -926,17 +1111,22 @@ public class GoodsService {
     @Transactional(value = "tx0", readOnly = true, rollbackFor = Exception.class)
     public GoodsDTO getGoodsByCode(String goodsCode) {
         String cacheKey = CACHE_KEY_PREFIX + goodsCode;
+        long startTime = System.currentTimeMillis();
 
         try {
             // 1. Try cache first
             Optional<GoodsDTO> cached = cacheGateway.get(cacheKey, GoodsDTO.class);
             if (cached.isPresent()) {
-                log.info("Goods found in cache: {}", goodsCode);
+                // [INFO] Cache hit - important for monitoring cache effectiveness
+                log.info("[Goods-Service][Query] Cache hit. goodsCode={}, duration={}ms", 
+                    goodsCode, System.currentTimeMillis() - startTime);
                 return cached.get();
             }
 
+            // [INFO] Cache miss - important for SLI tracking
+            log.info("[Goods-Service][Query] Cache miss, querying DB. goodsCode={}", goodsCode);
+
             // 2. Cache miss - query DB
-            log.info("Cache miss, querying DB for goods: {}", goodsCode);
             GoodsDTO goods = goodsDao.findByCode(goodsCode)
                 .orElseThrow(() -> new GoodsNotFoundException(goodsCode));
 
@@ -945,15 +1135,20 @@ public class GoodsService {
                 try {
                     cacheGateway.put(cacheKey, goods, CACHE_TTL);
                 } catch (Exception e) {
-                    log.error("Failed to cache goods: {}", goodsCode, e);
+                    // [WARN] Cache write failure - acceptable, don't break flow
+                    log.warn("[Goods-Service][Cache] Failed to cache goods. goodsCode={}, cause={}", 
+                        goodsCode, e.getMessage());
                 }
             });
 
+            log.info("[Goods-Service][Query] DB query success. goodsCode={}, duration={}ms", 
+                goodsCode, System.currentTimeMillis() - startTime);
             return goods;
 
         } catch (CacheConnectionException e) {
-            // Cache unavailable - query DB directly (degraded mode)
-            log.warn("Cache unavailable, querying DB directly: {}", goodsCode);
+            // [WARN] Cache unavailable - query DB directly (degraded mode)
+            log.warn("[Goods-Service][Query] Cache unavailable, querying DB directly. goodsCode={}", 
+                goodsCode);
             return goodsDao.findByCode(goodsCode)
                 .orElseThrow(() -> new GoodsNotFoundException(goodsCode));
         }
@@ -961,16 +1156,30 @@ public class GoodsService {
 
     @Transactional(value = "tx0", rollbackFor = Exception.class)
     public void updateGoods(GoodsDTO goods) {
-        // 1. Update DB
-        goodsDao.update(goods);
-
-        // 2. Invalidate cache (write-through pattern)
-        String cacheKey = CACHE_KEY_PREFIX + goods.getGoodsCode();
+        long startTime = System.currentTimeMillis();
+        
         try {
-            cacheGateway.delete(cacheKey);
+            // 1. Update DB
+            goodsDao.update(goods);
+
+            // 2. Invalidate cache (write-through pattern)
+            String cacheKey = CACHE_KEY_PREFIX + goods.getGoodsCode();
+            try {
+                cacheGateway.delete(cacheKey);
+            } catch (Exception e) {
+                // [WARN] Cache invalidation failure - acceptable
+                log.warn("[Goods-Service][Update] Failed to invalidate cache. goodsCode={}, cause={}", 
+                    goods.getGoodsCode(), e.getMessage());
+                // Don't fail the transaction - cache invalidation is best-effort
+            }
+            
+            log.info("[Goods-Service][Update] Success. goodsCode={}, duration={}ms", 
+                goods.getGoodsCode(), System.currentTimeMillis() - startTime);
+                
         } catch (Exception e) {
-            log.error("Failed to invalidate cache for goods: {}", goods.getGoodsCode(), e);
-            // Don't fail the transaction - cache invalidation is best-effort
+            log.error("[Goods-Service][Update] Failed! goodsCode={}, duration={}ms, cause={}", 
+                goods.getGoodsCode(), System.currentTimeMillis() - startTime, e.getMessage(), e);
+            throw e;
         }
     }
 }
@@ -1029,7 +1238,10 @@ public class S3FileStorageAdapter implements FileStorageGateway {
     @Retry(name = "s3Storage")
     @TimeLimiter(name = "s3Storage")
     public String uploadFile(String fileName, InputStream inputStream, long fileSize) {
-        log.info("Uploading file: {}, size: {} bytes", fileName, fileSize);
+        // [INFO] File upload start - include file name, size, traceId
+        log.info("[S3-Adapter][Upload] Start. fileName={}, size={}bytes, traceId={}", 
+            fileName, fileSize, MDC.get("traceId"));
+        long startTime = System.currentTimeMillis();
 
         try {
             // 1. Business validation
@@ -1053,38 +1265,51 @@ public class S3FileStorageAdapter implements FileStorageGateway {
             );
 
             s3Client.putObject(putRequest);
-            log.info("File uploaded successfully: {}", fileId);
+            
+            // [INFO] Upload success - include fileId and duration
+            log.info("[S3-Adapter][Upload] Success. fileId={}, fileName={}, duration={}ms", 
+                fileId, fileName, System.currentTimeMillis() - startTime);
 
             return fileId;
 
         } catch (IllegalArgumentException e) {
-            // Business exception - invalid file
-            log.error("Invalid file upload request: {}", e.getMessage());
+            // [ERROR] Business exception - invalid file
+            log.error("[S3-Adapter][Upload] Validation failed! fileName={}, size={}bytes, cause={}", 
+                fileName, fileSize, e.getMessage());
             throw new FileValidationException("Invalid file", e);
 
         } catch (AmazonServiceException e) {
-            // AWS service exception (4xx/5xx)
-            log.error("S3 service error: {} - {}", e.getStatusCode(), e.getErrorMessage());
+            // [ERROR/WARN] AWS service exception
             if (e.getStatusCode() == 403) {
+                log.error("[S3-Adapter][Upload] Access denied! fileName={}, status={}", 
+                    fileName, e.getStatusCode());
                 throw new FileStoragePermissionException("Access denied", e);
             } else if (e.getStatusCode() >= 500) {
+                // [WARN] 5xx errors - may retry
+                log.warn("[S3-Adapter][Upload] S3 server error, will retry. fileName={}, status={}, duration={}ms", 
+                    fileName, e.getStatusCode(), System.currentTimeMillis() - startTime);
                 throw new FileStorageServerException("S3 server error", e);
             }
+            log.error("[S3-Adapter][Upload] S3 service error! fileName={}, status={}, errorCode={}", 
+                fileName, e.getStatusCode(), e.getErrorCode());
             throw new FileStorageException("S3 error", e);
 
         } catch (AmazonClientException e) {
-            // Connection/network exception
-            log.error("S3 client error: {}", e.getMessage(), e);
+            // [WARN] Connection/network exception - may retry
+            log.warn("[S3-Adapter][Upload] Connection failed, will retry. fileName={}, duration={}ms, cause={}", 
+                fileName, System.currentTimeMillis() - startTime, e.getMessage());
             throw new FileStorageConnectionException("S3 connection failed", e);
 
         } catch (IOException e) {
-            // I/O exception
-            log.error("File I/O error: {}", e.getMessage(), e);
+            // [ERROR] I/O exception
+            log.error("[S3-Adapter][Upload] File I/O error! fileName={}, cause={}", 
+                fileName, e.getMessage(), e);
             throw new FileIOException("File read error", e);
 
         } catch (Exception e) {
-            // Unexpected exception
-            log.error("Unexpected file upload error", e);
+            // [ERROR] Unexpected exception
+            log.error("[S3-Adapter][Upload] Unexpected error! fileName={}, size={}bytes, cause={}", 
+                fileName, fileSize, e.getMessage(), e);
             throw new FileStorageException("Upload failed", e);
 
         } finally {
@@ -1092,7 +1317,7 @@ public class S3FileStorageAdapter implements FileStorageGateway {
             try {
                 inputStream.close();
             } catch (IOException e) {
-                log.warn("Failed to close input stream", e);
+                log.warn("[S3-Adapter][Upload] Failed to close input stream. fileName={}", fileName);
             }
         }
     }
@@ -1101,7 +1326,10 @@ public class S3FileStorageAdapter implements FileStorageGateway {
     @CircuitBreaker(name = "s3Storage", fallbackMethod = "downloadFileFallback")
     @TimeLimiter(name = "s3Storage")
     public InputStream downloadFile(String fileId) {
-        log.info("Downloading file: {}", fileId);
+        // [INFO] File download start
+        log.info("[S3-Adapter][Download] Start. fileId={}, traceId={}", 
+            fileId, MDC.get("traceId"));
+        long startTime = System.currentTimeMillis();
 
         try {
             validateFileId(fileId);
@@ -1112,22 +1340,31 @@ public class S3FileStorageAdapter implements FileStorageGateway {
                 s3Key
             );
 
-            log.info("File downloaded successfully: {}", fileId);
+            log.info("[S3-Adapter][Download] Success. fileId={}, duration={}ms", 
+                fileId, System.currentTimeMillis() - startTime);
             return s3Object.getObjectContent();
 
         } catch (AmazonS3Exception e) {
             if (e.getStatusCode() == 404) {
-                log.error("File not found: {}", fileId);
+                // [WARN] File not found - expected scenario
+                log.warn("[S3-Adapter][Download] File not found. fileId={}", fileId);
                 throw new FileNotFoundException("File not found: " + fileId);
             }
+            // [ERROR] Other S3 exceptions
+            log.error("[S3-Adapter][Download] S3 error! fileId={}, status={}", 
+                fileId, e.getStatusCode());
             throw new FileStorageException("Download failed", e);
 
         } catch (AmazonClientException e) {
-            log.error("S3 client error downloading file: {}", fileId, e);
+            // [WARN] Connection error - may retry
+            log.warn("[S3-Adapter][Download] Connection failed. fileId={}, duration={}ms, cause={}", 
+                fileId, System.currentTimeMillis() - startTime, e.getMessage());
             throw new FileStorageConnectionException("S3 unavailable", e);
 
         } catch (Exception e) {
-            log.error("Unexpected error downloading file: {}", fileId, e);
+            // [ERROR] Unexpected error
+            log.error("[S3-Adapter][Download] Unexpected error! fileId={}, cause={}", 
+                fileId, e.getMessage(), e);
             throw new FileStorageException("Download failed", e);
         }
     }
@@ -1139,10 +1376,12 @@ public class S3FileStorageAdapter implements FileStorageGateway {
             String s3Key = buildS3Key(fileId);
 
             s3Client.deleteObject(properties.getBucketName(), s3Key);
-            log.info("File deleted successfully: {}", fileId);
+            log.info("[S3-Adapter][Delete] Success. fileId={}", fileId);
 
         } catch (Exception e) {
-            log.error("Error deleting file: {}", fileId, e);
+            // [WARN] Delete failure is acceptable - idempotent operation
+            log.warn("[S3-Adapter][Delete] Failed, operation skipped. fileId={}, cause={}", 
+                fileId, e.getMessage());
             // Swallow exception - file delete is idempotent
         }
     }
@@ -1150,7 +1389,9 @@ public class S3FileStorageAdapter implements FileStorageGateway {
     // Fallback: Save to local temp storage for retry
     private String uploadFileFallback(String fileName, InputStream inputStream, 
                                      long fileSize, Exception e) {
-        log.error("S3 upload fallback triggered for file: {}, saving to local temp", fileName, e);
+        // [ERROR] Fallback to local temp storage
+        log.error("[S3-Adapter][Fallback] S3 unavailable, saving to local temp. fileName={}, triggerCause={}", 
+            fileName, e.getClass().getSimpleName());
 
         try {
             String fileId = generateFileId(fileName);
@@ -1158,7 +1399,10 @@ public class S3FileStorageAdapter implements FileStorageGateway {
 
             // Save to local filesystem
             Files.copy(inputStream, tempPath, StandardCopyOption.REPLACE_EXISTING);
-            log.info("File saved to temp storage: {}", tempPath);
+            
+            // [INFO] Temp storage success
+            log.info("[S3-Adapter][TempStorage] Saved. fileId={}, path={}, action=QueueForRetry", 
+                fileId, tempPath);
 
             // Queue for background upload to S3
             queueFileForRetry(fileId, tempPath.toString());
@@ -1166,24 +1410,29 @@ public class S3FileStorageAdapter implements FileStorageGateway {
             return fileId;
 
         } catch (IOException ioException) {
-            log.error("Failed to save file to temp storage", ioException);
+            // [ERROR] Critical - both S3 and local storage failed (P0 Alert)
+            log.error("[S3-Adapter][Fallback] Failed to save to temp! Data loss risk! fileName={}", 
+                fileName, ioException);
             throw new CriticalFileStorageException("File storage failed completely", ioException);
         }
     }
 
     private InputStream downloadFileFallback(String fileId, Exception e) {
-        log.error("S3 download fallback triggered for file: {}, checking temp storage", fileId, e);
+        // [WARN] Fallback to local temp storage
+        log.warn("[S3-Adapter][Fallback] S3 unavailable, checking temp storage. fileId={}", fileId);
 
         try {
             Path tempPath = Paths.get(properties.getTempDirectory(), fileId);
             if (Files.exists(tempPath)) {
-                log.info("File found in temp storage: {}", fileId);
+                log.info("[S3-Adapter][TempStorage] File found. fileId={}", fileId);
                 return Files.newInputStream(tempPath);
             }
         } catch (IOException ioException) {
-            log.error("Failed to read from temp storage", ioException);
+            log.error("[S3-Adapter][TempStorage] Failed to read. fileId={}", fileId, ioException);
         }
 
+        // [ERROR] File not available anywhere
+        log.error("[S3-Adapter][Fallback] File not available! fileId={}", fileId);
         throw new FileNotFoundException("File not available: " + fileId);
     }
 

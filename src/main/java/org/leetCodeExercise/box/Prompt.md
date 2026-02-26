@@ -6,14 +6,14 @@ Let`s make sure we have the same understanding about the engineering disciplines
 (Do Not Implement the codes right now)
 ```
 
-### Promp: Auto Generate the Flow Diagram and ER Models for analysis
+### Promp: Auto Generate the Flow Diagram and ER Models for analysis [Analysis]
 
 ```jsx
-analysis the overall service flow of the API endpoint **/goods/getGoodsDetailV5.service**, based on the conditions below:
+analysis the overall service flow of the API endpoint **/getAvgWeigBuyPrice.service**, based on the conditions below:
 
 [Must To Have]
-- API endpoint: **/goods/getGoodsDetailV5.service**
-- Controller: **GoodsNativeController**
+- API endpoint: **/getAvgWeigBuyPrice.service**
+- Controller: **GoodsController**
 - Dig all the dependency services involved in the process and their interactions into method level details automatically.
 - Identify the sequence of interactions among components
 - Highlight the cross system/app interactions (e.g., Kafka, Redis, Restful API invocation... etc.)
@@ -23,30 +23,55 @@ analysis the overall service flow of the API endpoint **/goods/getGoodsDetailV5.
 - Arrange all test scenarios
 - All diagrams are generated with the **PlantUML** diagram **puml** format.
 - All analysis documents are generated with the **Markdown** format.
-- Generate the analysis report into middle/doc/${API_PATH} folder
+- Generate the analysis report into folder middle/doc/goods/${API_PATH}/
 - **Do NOT overwrite existing files directly**, append new information to existing files or create new files with different names [!Important]
 - **Do NOT implement code right now** - this is analysis phase only [!Important]
 ```
 
-### Promp: Auto Generate the Fundamental APIs, Flows and Objects Design Documents [Refactor]
+### Promp: Auto Generate the Fundamental APIs, Flows and Objects Design Documents [Refactor - Design]
 
 ```jsx
 great, base on the disciplines and the analysis documents **above**,
-I`d like to refactor this function from **middle-web** into **goods** module,
+I`d like to refactor this function in **goods** module,
 provide the design documents with the conditions below:
 
 - jdk8 + spring boot2
 - os: window, cmd: power shell (if needed)
-- full fundamental apis
-- full biz flows, cross function interaction flows and utils
-- all class and object needed
+- all Model/DTO/RequestDTO/ResponseDTO
 - all test cases, test senarios and test data with gherkin format
 - swagger api docs
 - use the library in pom only
 - **Do NOT overwrite existing files directly**, append new information to existing files or create new files with different names [!Important]
 ```
 
-### Promp: Auto Implement the Fundemantal APIs, Flows and Objects by Design Documents [Refactor]
+### Promp: Auto Implement the Fundamental APIs, Flows and Objects by Design Documents [Refactor - Complete Shadow API Test]
+
+```jsx
+great, i just completed the design review, and everything looks good.
+let`s implement the test cases within the Shadow Testing pattern and the extra specs below:
+
+[Must To Have]
+- Based on the Shadow Testing Guides (${ProjectRoot}/doc/testing/ShadowTestingGuide.md) 
+- Target Module: **goods-api**
+- Action: **Testing**
+- Methodology: **Shadow Testing, TDD**
+- Reference Samples:
+    - BaseShadowTest
+    - DualShadowTestController_testGetTest (Must to follow the structure and format)
+    - testGetTest.yml (Must to follow the structure and format)
+    - testGetTest.json (Must to follow the structure and format)
+- Implementation Steps:
+    - Focus on the Shadow Testing implementation only
+    - Arrange all the scenarios into src/test/resources/scenario/  (Must to follow the structure and format)
+    - Arrange all the specifications into src/test/resources/specification/  (Must to follow the structure and format)
+	- Implement all Shadow Test scenarios with test data in Gherkin format for A/B Testing. (exclude the Performance Test)
+	- Arrange the native query sql to collect the test data for each test case in database.
+	- Provide the docuemtation files in the scope above only. (e.g., Don`t provide any md files not in the scope above)
+ 	- **Recheck the generated files for each file. If the file is not valid, please re-generate it until it is correct.**
+- **Do NOT overwrite existing files directly**, append new information to existing files or create new files with different names [!Important]
+```
+
+### Promp: Auto Implement the Fundamental APIs, Flows and Objects by Design Documents [Refactor]
 
 ```jsx
 cool, i just completed the design review, and everything looks good.
@@ -76,7 +101,27 @@ let`s implement the codes based on the design documents above with the extra spe
 	- Flow Chat / ER Model Diagram )
 ```
 
-### Promp: Auto Generate the Fundamental APIs, Flows and Objects Design Documents [New Requirements]
+### Promp: Auto Generate the Fundamental APIs, Flows and Objects Design Documents [New Requirements - Frontend]
+
+```jsx
+base on the attached folders, specs and files,
+let`s analysis the requirements and provide the system design documents in project path 'doc/${Requirement}/'.
+all analysis and design documents should include the conditions below:
+
+[Must To Have]
+- Identify the User Behavior in active diagram
+- Arrange all the UI components used in the process with their relationships into class diagram
+	(We will implement the function into React functional components with Dependency Inject design concept)
+- Arrange all the data models used in the process with their relationships into class diagram
+- Arrange all test scenarios
+- All diagrams are generated with the **PlantUML** diagram **puml** format.
+- All analysis documents are generated with the **Markdown** format.
+- Generate the analysis report into ${ProjectRoot}/doc/${Requirement} folder
+- **Do NOT overwrite existing files directly**, append new information to existing files or create new files with different names [!Important]
+- **Do NOT implement code right now** - this is analysis phase only [!Important]
+```
+
+### Promp: Auto Generate the Fundamental APIs, Flows and Objects Design Documents [New Requirements - Backend]
 
 ```jsx
 base on the attached specs and files, let`s provide the new design document with the conditions below:
@@ -93,7 +138,7 @@ base on the attached specs and files, let`s provide the new design document with
 - Arrange all test scenarios
 - All diagrams are generated with the **PlantUML** diagram **puml** format.
 - All analysis documents are generated with the **Markdown** format.
-- Generate the analysis report into middle/doc/${API_PATH} folder
+- Generate the analysis report into ${ProjectRoot}/doc/${API_PATH} folder
 - **Do NOT overwrite existing files directly**, append new information to existing files or create new files with different names [!Important]
 - **Do NOT implement code right now** - this is analysis phase only [!Important]
 ```
@@ -131,8 +176,8 @@ let`s implement the codes based on the design documents above with the extra spe
 ### Promp: Refine the Spec with Gherkin Specs
 
 ```jsx
-Based on the Engineering Disciplines and previous discussions, 
-**retain all existing information** and **append the following Specs and Test Cases** into the design documents, 
+Based on the Engineering Disciplines and previous discussions,
+**retain all existing information** and **append the following Specs and Test Cases** into the design documents,
 then **provide the updated design document version**:
 
 - Specs (**Gherkin** Format Spec), **New / Modify**:
